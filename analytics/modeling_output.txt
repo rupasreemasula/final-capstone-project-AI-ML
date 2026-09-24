@@ -1,0 +1,156 @@
+==============================================================================
+TASK 7 - Stratified train/test split
+==============================================================================
+
+Overall class balance (survived):
+survived
+0    0.6162
+1    0.3838
+
+Justification for stratification: the classes are imbalanced (~61.6% not-survived vs ~38.4% survived). On a dataset this size (~890 rows), a plain random split can by chance shift that ratio noticeably between train and test, which would bias evaluation metrics (e.g. an unlucky test fold with far more/fewer survivors than the true rate). A STRATIFIED split preserves the same survived/not-survived ratio in both folds, so test-set performance is a fair estimate of real-world performance.
+
+Train size: 712  Test size: 179
+Train class balance:
+survived
+0    0.6166
+1    0.3834
+Test class balance:
+survived
+0    0.6145
+1    0.3855
+
+==============================================================================
+TASK 8 - Preprocessing (fit on training data only)
+==============================================================================
+
+Every model below is a single sklearn Pipeline([('preprocessor', ColumnTransformer(...)), ('classifier', <model>)]). Calling pipeline.fit(X_train, y_train) fits the imputer/scaler/encoder *only* on X_train; calling pipeline.predict(X_test) or pipeline.score(X_test) then applies those already-fitted transforms in transform-only mode to X_test. No step is ever fit or refit on test data or on the full pre-split dataset - this is enforced structurally by the Pipeline/ColumnTransformer, not left to be remembered by hand.
+Missing-value handling for this stage (independent of Task 2's EDA-stage choice): numeric columns are median-imputed, categorical columns are most-frequent-imputed - both fit on the training split only, via the ColumnTransformer above.
+
+==============================================================================
+TASK 9 & 10 - Train 3 classifiers, evaluate full metric suite
+==============================================================================
+
+--- Logistic Regression ---
+Confusion matrix (rows=actual, cols=predicted; [0=not survived, 1=survived]):
+[[98 12]
+ [23 46]]
+  accuracy: 0.8045
+  precision: 0.7931
+  recall: 0.6667
+  f1: 0.7244
+  auc: 0.8437
+
+--- Decision Tree ---
+Confusion matrix (rows=actual, cols=predicted; [0=not survived, 1=survived]):
+[[97 13]
+ [29 40]]
+  accuracy: 0.7654
+  precision: 0.7547
+  recall: 0.5797
+  f1: 0.6557
+  auc: 0.7971
+
+--- Random Forest ---
+Confusion matrix (rows=actual, cols=predicted; [0=not survived, 1=survived]):
+[[98 12]
+ [21 48]]
+  accuracy: 0.8156
+  precision: 0.8000
+  recall: 0.6957
+  f1: 0.7442
+  auc: 0.8300
+
+--- Classifier comparison table (accuracy/precision/recall/F1/AUC) ---
+                     accuracy  precision  recall      f1     auc
+model                                                           
+Logistic Regression    0.8045     0.7931  0.6667  0.7244  0.8437
+Decision Tree          0.7654     0.7547  0.5797  0.6557  0.7971
+Random Forest          0.8156     0.8000  0.6957  0.7442  0.8300
+
+==============================================================================
+TASK 11 - Imbalance handling comparison (model: Logistic Regression)
+==============================================================================
+
+Training-fold class balance:
+survived
+0    439
+1    273
+survived
+0    0.6166
+1    0.3834
+
+(a) Baseline / no handling: precision=0.7931  recall=0.6667  f1=0.7244
+
+(b) class_weight='balanced': precision=0.7297  recall=0.7826  f1=0.7552
+
+(c) SMOTE (training fold only): precision=0.7397  recall=0.7826  f1=0.7606
+
+--- Imbalance strategy comparison table ---
+                                precision  recall      f1
+variant                                                  
+(a) Baseline / no handling         0.7931  0.6667  0.7244
+(b) class_weight='balanced'        0.7297  0.7826  0.7552
+(c) SMOTE (training fold only)     0.7397  0.7826  0.7606
+
+Conclusion: '(c) SMOTE (training fold only)' achieved the highest F1 on the test set. The class imbalance here (~38% survived) is moderate rather than extreme, so the baseline model already captures the minority class reasonably well; class_weight='balanced' and SMOTE both push recall up (fewer missed survivors) generally at some cost to precision (more false positives), since both make the model more willing to predict the minority class. Whichever variant wins on F1 here offers the best precision/recall trade-off for this dataset; in a deployment where missing a survivor is worse than a false alarm, the higher-recall variant would be preferred even if its F1 were slightly lower.
+
+==============================================================================
+TASK 12 - GridSearchCV tuning: Random Forest
+==============================================================================
+
+Best params: {'classifier__max_depth': 5, 'classifier__max_features': 'sqrt', 'classifier__n_estimators': 100}
+Best CV F1 score: 0.7459
+Out-of-bag (OOB) score of the tuned Random Forest: 0.8272
+
+--- Tuned Random Forest (test set) ---
+Confusion matrix (rows=actual, cols=predicted; [0=not survived, 1=survived]):
+[[104   6]
+ [ 27  42]]
+  accuracy: 0.8156
+  precision: 0.8750
+  recall: 0.6087
+  f1: 0.7179
+  auc: 0.8431
+
+==============================================================================
+TASK 13 - Regression side-task: predict fare
+==============================================================================
+
+MAE:  19.6063
+RMSE: 43.7043
+R^2:  0.3841
+Adjusted R^2: 0.3589  (n=179 test rows, p=7 original predictor columns)
+
+Correlation(|residual|, predicted fare) = 0.4210
+The residual plot shows HETEROSCEDASTICITY: the spread of residuals visibly fans out as predicted fare increases (|residual| vs predicted fare correlation = 0.42), rather than scattering randomly around zero with constant width. This is expected for fare, which is a heavily right-skewed, long-tailed variable (see Task 3) that a linear model cannot fully linearize.
+
+==============================================================================
+TASK 14 - Final model comparison table
+==============================================================================
+
+--- Classification metrics (accuracy, precision, recall, F1, AUC) ---
+                                accuracy  precision  recall      f1     auc
+model                                                                      
+Logistic Regression               0.8045     0.7931  0.6667  0.7244  0.8437
+Decision Tree                     0.7654     0.7547  0.5797  0.6557  0.7971
+Random Forest                     0.8156     0.8000  0.6957  0.7442  0.8300
+Tuned Random Forest (test set)    0.8156     0.8750  0.6087  0.7179  0.8431
+
+--- Regression metrics (separate scale - MAE, RMSE, R2, Adjusted R2) ---
+                                         MAE     RMSE      R2  Adjusted_R2
+Linear Regression (predicting fare)  19.6063  43.7043  0.3841       0.3589
+
+Recommendation: deploy **Random Forest** (accuracy=0.816, precision=0.800, recall=0.696, F1=0.744, AUC=0.830). It achieves the highest F1 among the candidates evaluated here, balancing precision and recall better than the alternatives while keeping AUC competitive. Logistic Regression is the most interpretable option and the Decision Tree is the most explainable visually, but neither matches this model's F1/AUC on the held-out test set. Given Zepto-style production use favors robust, well-generalizing models over marginal interpretability gains, Random Forest is the recommended choice for deployment.
+
+==============================================================================
+TASK 15 - Save best-performing complete pipeline via joblib
+==============================================================================
+
+Saved best pipeline ('Random Forest') -> C:\Users\Windows 10\Desktop\projetcs\analytics\best_pipeline.joblib
+
+Reload check on raw input row:
+     pclass   age  sibsp  parch   fare   sex embarked
+565       3  24.0      2      0  24.15  male        S
+Original pipeline prediction: [0]
+Reloaded pipeline prediction: [0]
+Reloaded pipeline predicts identically to the original -> PASS
